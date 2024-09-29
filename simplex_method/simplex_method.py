@@ -33,6 +33,7 @@ class SimplexMethod:
         # converting min to max
         if self.mode == 'min':
             self.c = [(-1) * num for num in self.c]
+        self.num_init_vars = len(self.c)
         symbols = ['=', '>', '<']
         self.A = []  # constraints coefficients matrix
         self.b = []  # right sights of the constraints
@@ -146,7 +147,10 @@ class SimplexMethod:
     def __print_solution(self, solution: list[tuple[int, float]]) -> None:
         print('Solution:')
         ind = 0
+        print('Initial variables:')
         for i in range(self.n):
+            if i == self.num_init_vars:
+                print('Residues:')
             if ind < len(solution) and i == solution[ind][0]:
                 print(f'{i + 1}: {round(solution[ind][1], 5)} ')
                 ind += 1
