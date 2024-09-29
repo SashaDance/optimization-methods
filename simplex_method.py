@@ -8,7 +8,7 @@ class SimplexMethod:
     """
     Simplex method solver when all constraints are equalities
     """
-    def __init__(self, A: list[list[int]], b: list[int], c: list[int]):
+    def __init__(self, A: list[list[int]], b: list[int], c: list[int]) -> None:
         """
         :param A: matrix with constraints coefficients (m x n)
         :param b: vector with right sights of the constraints (m x 1)
@@ -63,36 +63,31 @@ class SimplexMethod:
         3 - constraints of problem are incompatible
         :return: execution code
         """
-        # selecting variable to append to basis
-        # print(f'Current basis: {self._basis_indices}')
         # updating deltas
         self.deltas = (
             self.c
-            - self.c[self._basis_indices] @ self.A
+            - self.c[self._basis] @ self.A
         )
-        # print(f'Deltas: {self.deltas}')
         new_var_ind = self.deltas[:-1].argmax()  # variable to append
         # selecting variable to remove from basis
         if self.deltas[new_var_ind] <= 0:
-            for i in range(self.n, self.n + self.m):
-                if i in self._basis_indices:
-                    return 3
+            # checking that there are no artificial variables left in basis
+            if any(basis_var >= self.n for basis_var in self._basis):
+                return 3
             return 1
-        # print(f'New variable: {new_var_ind}')
-        ratios = np.where(
-            self.A[:, new_var_ind] != 0,
-            self.A[:, -1] / self.A[:, new_var_ind],
-            0
-        )
+        # ignoring zero division warnings
+        with np.errstate(divide='ignore'):
+            ratios = np.where(
+                self.A[:, new_var_ind] != 0,
+                self.A[:, -1] / self.A[:, new_var_ind],
+                0
+            )
         if (ratios <= 0).all():
             return 2
         ratios = np.where(ratios <= 0, 1e12, ratios)  # handling non positive values
-        pivot_row = ratios.argmin()
-        old_var_ind = self._basis_indices[pivot_row]  # variable to remove
-        # print(f'Old variable:{old_var_ind}')
-        # print(f'pivot row: {pivot_row}')
+        pivot_row = ratios.argmin()  # index of variable to remove
         # updating basis variable
-        self._basis_indices[pivot_row] = new_var_ind
+        self._basis[pivot_row] = new_var_ind
         # updating coefficients
         self.A[pivot_row, :] /= self.A[pivot_row, new_var_ind]
         for i in range(self.m):
@@ -103,7 +98,6 @@ class SimplexMethod:
                     self.A[i, :]
                     - self.A[i, new_var_ind] * self.A[pivot_row, :]
                 )
-        # print(f'A: {self.A}')
 
         return 0
 
@@ -120,33 +114,35 @@ class SimplexMethod:
     def solve(self,
               print_solution: bool = True) -> Optional[list[tuple[int, float]]]:
         # initializing basis variables with artificial variables
-        self._basis_indices = [self.n + i for i in range(self.m)]
-        while True:
+        self._basis = [self.n + i for i in range(self.m)]
+        code = 0
+        # algorithm loop
+        while not code:
             code = self._step()
-            if code:
-                if code == 2:
-                    print('Problem is unbounded')
-                    return None
-                elif code == 3:
-                    print('Constraints of problem are incompatible')
-                    return None
-                else:
-                    result = (
-                        self.c[self._basis_indices]
-                        @ self.A[:, -1]
-                    )
-                    variables_values = self.A[:, -1]
-                    solutions = list(
-                        zip(self._basis_indices, variables_values)
-                    )
-                    solutions = sorted(
-                        solutions, key=lambda x: x[0]
-                    )
-                    if print_solution:
-                        print(f'Problem solved successfully')
-                        print(f'Function value is {round(result, 5)}')
-                        self.__print_solution(solutions)
-                    return solutions
+
+        if code == 2:
+            print('Problem is unbounded')
+            return None
+        elif code == 3:
+            print('Constraints of problem are incompatible')
+            return None
+        else:
+            result = (
+                self.c[self._basis]
+                @ self.A[:, -1]
+            )
+            variables_values = self.A[:, -1]
+            solutions = list(
+                zip(self._basis, variables_values)
+            )
+            solutions = sorted(
+                solutions, key=lambda x: x[0]
+            )
+            if print_solution:
+                print(f'Problem solved successfully')
+                print(f'Function value is {round(result, 5)}')
+                self.__print_solution(solutions)
+            return solutions
 
 
 if __name__ == '__main__':
