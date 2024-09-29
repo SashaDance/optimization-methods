@@ -6,38 +6,79 @@ M = int(1e12)
 
 class SimplexMethod:
     """
-    Simplex method solver when all constraints are equalities
+    Simplex method solver using artificial variables
     """
-    def __init__(self, A: list[list[int]], b: list[int], c: list[int]) -> None:
+    def __init__(self, constrains: list[str],
+                 c: list[float], mode: str) -> None:
         """
-        :param A: matrix with constraints coefficients (m x n)
-        :param b: vector with right sights of the constraints (m x 1)
-        :param c: vector with coefficients in the cost function (n x 1)
+        :param constrains: list of constrains of the following format:
+        1 -1 3 < 3
+        1 -2 5 > 5
+        1 4 2 = 1
+        :param c: vector with coefficients in the cost function
+        :param mode: mode to solve a problem (max/min)
         """
-        self.A = A
-        self.b = b
+        self.constrains = constrains
+        self.mode = mode
         self.c = c
-        self.__check_valid_input()
-        self.m = len(A)
-        self.n = len(A[0])
-        self.__process_inputs()
+        self.__process_input()
+        self.__add_artificial_variables()
 
-    def __check_valid_input(self) -> None:
+    def __process_input(self) -> None:
         """
-        Checks shapes of the inputs
+        Parses inputs and converts problem to canonical form:
+        all inequalities in constrains replaced with equalities,
+        minimum problem converted to maximum problem
         """
-        assert len(self.A) == len(self.b), \
-            f'Invalid input: got {len(self.A)} rows in A matrix and {len(self.b)} rows in b vector, must be the same'
-        assert len(self.A[0]) == len(self.c), \
-            f'Invalid input: got {len(self.A[0])} columns in A matrix and {len(self.c)} rows in c vector, must be the same'
-
-    def __process_inputs(self) -> None:
-        """
-        Prepares inputs and adds artificial variables
-        """
-        # coefficients matrix with right sights
+        # converting min to max
+        if self.mode == 'min':
+            self.c = [(-1) * num for num in self.c]
+        symbols = ['=', '>', '<']
+        self.A = []  # constraints coefficients matrix
+        self.b = []  # right sights of the constraints
+        num_residues = len([
+            1 for _ in self.constrains if '>' in _ or '<' in _
+        ])
+        cnt = 0
+        for constraint in self.constrains:
+            for ch in symbols:
+                if ch in constraint:
+                    symb = ch
+                    break
+            row, right_sight = constraint.split(symb)
+            row = [float(num) for num in row[:-1].split()]
+            right_sight = float(right_sight[1:])
+            # appending residues
+            if symb == '<':
+                for i in range(num_residues):
+                    if i == cnt:
+                        row.append(1.0)
+                    else:
+                        row.append(0.0)
+                cnt += 1
+                self.c.append(0.0)
+            elif symb == '>':
+                for i in range(num_residues):
+                    if i == cnt:
+                        row.append(-1.0)
+                    else:
+                        row.append(0.0)
+                cnt += 1
+                self.c.append(0.0)
+            else:
+                for i in range(num_residues):
+                    row.append(0.0)
+            self.A.append(row)
+            self.b.append(right_sight)
         self.m = len(self.b)
         self.n = len(self.c)
+
+
+    def __add_artificial_variables(self) -> None:
+        """
+        Adds artificial variables to problem in a canonical form
+        """
+        # coefficients matrix with artificial variables and right sights
         self.A = np.concatenate(
             [
                 np.array(self.A, dtype=np.float64),
@@ -46,10 +87,11 @@ class SimplexMethod:
             ],
             axis=1
         )
+        # adding artificial variables and column for the function value
         self.c = np.concatenate(
             [
                 np.array(self.c, dtype=np.float64),
-                -M * np.ones(self.m + 1, dtype=np.float64)  # artificial variables
+                -M * np.ones(self.m + 1, dtype=np.float64)
             ],
             axis=0
         )
@@ -131,6 +173,7 @@ class SimplexMethod:
                 self.c[self._basis]
                 @ self.A[:, -1]
             )
+            result = result * (-1) if self.mode == 'min' else result
             variables_values = self.A[:, -1]
             solutions = list(
                 zip(self._basis, variables_values)
@@ -146,14 +189,15 @@ class SimplexMethod:
 
 
 if __name__ == '__main__':
-    m, n = [int(_) for _ in input().split()]
+    constrains = []
+    while True:
+        row = input()
+        if not any(symb in row for symb in ['=', '>', '<']):
+            break
+        constrains.append(row)
 
-    A = []
-    for i in range(m):
-        A.append([int(_) for _ in input().split()])
+    c = [float(_) for _ in row.split()]
+    mode = input()
 
-    b = [int(_) for _ in input().split()]
-    c = [int(_) for _ in input().split()]
-
-    solver = SimplexMethod(A, b, c)
+    solver = SimplexMethod(constrains, c, mode)
     solver.solve()
