@@ -1,6 +1,8 @@
 import sympy as sp
 import numpy as np
 import re
+import itertools
+from typing import Optional
 
 
 class QPSolver:
@@ -16,17 +18,19 @@ class QPSolver:
         self.f_str = function
         self.__process_constraints()
         self.__get_diff_equations()
-        self.__print_system()
 
     def __get_diff_equations(self) -> None:
         # getting coefficients for initial n variables
         self.x_vars = sp.symbols(
             ' '.join([f'x{i + 1}' for i in range(self.n)])
         )
+        self.f_str_new = self.f_str[:]
         for i in range(self.n):
-            self.f_str = self.f_str.replace(f'x{i + 1}', f'self.x_vars[{i}]')
+            self.f_str_new = self.f_str_new.replace(
+                f'x{i + 1}', f'self.x_vars[{i}]'
+            )
 
-        f = eval(self.f_str)
+        f = eval(self.f_str_new)
         coeffs = []
         consts = []
         self.diff_right_sights = []
@@ -45,6 +49,17 @@ class QPSolver:
             self.diff_right_sights.append((-1) * diff_coeffs[-1])
         self.diff_right_sights = np.array(self.diff_right_sights)
         self.diff_equations = np.array(coeffs)
+        # adding residual variables
+        self.diff_equations = np.concatenate(
+            [
+                self.diff_equations,
+                np.zeros(
+                    shape=(len(self.diff_equations), self.m),
+                    dtype=np.int64
+                )
+            ],
+            axis=1
+        )
         # adding lambda coefficients
         self.diff_equations = np.concatenate(
             [
@@ -57,70 +72,67 @@ class QPSolver:
         self.diff_equations = np.concatenate(
             [
                 self.diff_equations,
-                (-1) * np.identity(self.n, dtype=np.int64)
+                (-1) * np.identity(n=self.n, dtype=np.int64)
+            ],
+            axis=1
+        )
+
+    def __process_constraints(self) -> None:
+        self.A = []  # constraints coefficients matrix
+        self.b = []  # right sights of the constraints
+        num_residues = self.m
+        cnt = 0
+        for constraint in self.constraints:
+            row, right_sight = constraint.split('<')
+            row = [int(num) for num in row[:-1].split()]
+            right_sight = int(right_sight[1:])
+            # appending residues
+            for i in range(num_residues):
+                if i == cnt:
+                    row.append(1)
+                else:
+                    row.append(0)
+            cnt += 1
+            self.A.append(row)
+            self.b.append(right_sight)
+        self.A, self.b = np.array(self.A), np.array(self.b)
+        # adding lambda and mu coefficients
+        self.A = np.concatenate(
+            [
+                self.A,
+                np.zeros(shape=(len(self.A), self.n + self.m), dtype=np.int64)
             ],
             axis=1
         )
 
     def __print_system(self) -> None:
         # diff equations
-        for ind, row in enumerate(self.diff_equations):
+        all_right_sights = np.concatenate([
+            self.diff_right_sights, self.b
+        ])
+        init_system = np.concatenate([self.diff_equations, self.A])
+        for ind, row in enumerate(init_system):
             x_ = ' + '.join(
                 f'{coef} * x_{i + 1}' for i, coef in enumerate(row[:self.n])
             )
+            xr_ = ' + '.join(
+                f'{coef} * xr_{i + 1}' for i, coef in
+                enumerate(row[self.n: self.n + self.m])
+            )
             lambda_ = ' + '.join(
-                f'{coef} * lambda_{i + 1}' for i, coef in enumerate(row[self.n: self.n + self.m])
+                f'{coef} * lambda_{i + 1}' for i, coef in
+                enumerate(row[self.n + self.m: self.n + 2 * self.m])
             )
             mu_ = ' + '.join(
-                f'{coef} * mu_{i + 1}' for i, coef in enumerate(row[self.n + self.m:])
+                f'{coef} * mu_{i + 1}' for i, coef in
+                enumerate(row[self.n + self.m: self.n + 2 * self.m:])
             )
-            print(x_ + ' + ' + lambda_ + ' + ' + mu_ + f' = {self.diff_right_sights[ind]}')
-        # constrains equations
-        for ind, row in enumerate(self.A):
-            x_ = ' '.join(
-                f'{coef} * x_{i + 1}' for i, coef in enumerate(row[:self.n])
+            print(
+                x_ + ' + ' + xr_
+                + ' + ' + lambda_
+                + ' + ' + mu_
+                + f' = {all_right_sights[ind]}'
             )
-            xr_ = ' '.join(
-                f'{coef} * xr_{i + 1}' for i, coef in enumerate(row[self.n:])
-            )
-            print(x_ + ' + ' + xr_ + f' = {self.b[ind]}')
-    def __process_constraints(self) -> None:
-        symbols = ['=', '>', '<']
-        self.A = []  # constraints coefficients matrix
-        self.b = []  # right sights of the constraints
-        num_residues = len([
-            1 for _ in self.constraints if '>' in _ or '<' in _
-        ])
-        cnt = 0
-        for constraint in self.constraints:
-            for ch in symbols:
-                if ch in constraint:
-                    symb = ch
-                    break
-            row, right_sight = constraint.split(symb)
-            row = [int(num) for num in row[:-1].split()]
-            right_sight = int(right_sight[1:])
-            # appending residues
-            if symb == '<':
-                for i in range(num_residues):
-                    if i == cnt:
-                        row.append(1)
-                    else:
-                        row.append(0)
-                cnt += 1
-            elif symb == '>':
-                for i in range(num_residues):
-                    if i == cnt:
-                        row.append(-1)
-                    else:
-                        row.append(0)
-                cnt += 1
-            else:
-                for i in range(num_residues):
-                    row.append(0)
-            self.A.append(row)
-            self.b.append(right_sight)
-        self.A, self.b = np.array(self.A), np.array(self.b)
 
     @staticmethod
     def parse_linear_equation(var_name: str,
@@ -166,6 +178,72 @@ class QPSolver:
 
         return coefficients
 
+    @staticmethod
+    def calculate_func_val(func: str, x_vec: list[float]) -> float:
+        for ind, x in enumerate(x_vec):
+            func = func.replace(f'x{ind + 1}', str(x))
+        return eval(func)
+
+    def solve(self, print_solution: bool) -> Optional[list[float]]:
+        for i in range(2 ** (self.n + self.m)):
+            # selecting x and xr that are zero
+            x_mask = np.array(
+                [int(_) for _ in bin(i)[2:].zfill(self.n + self.m)],
+                dtype=np.int64
+            )
+            # getting x that are zero
+            x_indices = itertools.compress(
+                list(range(self.n + self.m)),
+                x_mask
+            )
+            # getting mu that are zero
+            mu_indices = itertools.compress(
+                list(range(self.n)),
+                1 - x_mask[:self.n]  # inverting bytes
+            )
+            # getting lambda that are zero
+            lambda_indices = itertools.compress(
+                list(range(self.m)),
+                1 - x_mask[self.n:]  # inverting bytes
+            )
+            new_equations = []
+            first_indices = (0, self.n + self.m, self.n + 2 * self.m)
+            all_indices = list(map(
+                lambda x: list(x),
+                [x_indices, lambda_indices, mu_indices]
+            ))
+            for first_ind, indices in zip(first_indices, all_indices):
+                for ind in indices:
+                    new_row = [0] * (2 * (self.n + self.m))
+                    new_row[first_ind + ind] = 1
+                    new_equations.append(new_row)
+            # adding new equations
+            new_equations = np.array(new_equations)
+            new_right_sights = np.array([0] * len(new_equations))
+            right_sights = np.concatenate([
+                self.diff_right_sights, self.b, new_right_sights
+            ])
+            system = np.concatenate([
+                self.diff_equations, self.A, new_equations
+            ])
+            # solving systems
+            cur_solution = np.linalg.solve(system, right_sights)
+            # checking if solution was reached
+            if all(cur_solution >= 0):
+                sol = list(cur_solution[:])
+                if print_solution:
+                    print('Problem solved successfully')
+                    print(f'x vector: {sol}')
+                    val = self.calculate_func_val(self.f_str, sol)
+                    val = val if self.mode == 'min' else -val
+                    print(f'Function value: {val}')
+                return sol
+
+        if print_solution:
+            print('Problem is unsolvable')
+            return None
+
+
 if __name__ == '__main__':
     n, m = [int(_) for _ in input().split()]
     func = input()
@@ -181,4 +259,4 @@ if __name__ == '__main__':
         mode=mode,
         constraints=constraints
     )
-
+    solver.solve(print_solution=True)
