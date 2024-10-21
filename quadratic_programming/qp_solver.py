@@ -3,6 +3,8 @@ import numpy as np
 import re
 import itertools
 from typing import Optional
+from gauss import gauss
+from matrix import Matrix
 
 
 class QPSolver:
@@ -18,6 +20,7 @@ class QPSolver:
         self.f_str = function
         self.__process_constraints()
         self.__get_diff_equations()
+        self.__print_system()
 
     def __get_diff_equations(self) -> None:
         # getting coefficients for initial n variables
@@ -111,6 +114,7 @@ class QPSolver:
             self.diff_right_sights, self.b
         ])
         init_system = np.concatenate([self.diff_equations, self.A])
+        print(init_system)
         for ind, row in enumerate(init_system):
             x_ = ' + '.join(
                 f'{coef} * x_{i + 1}' for i, coef in enumerate(row[:self.n])
@@ -218,8 +222,8 @@ class QPSolver:
                     new_row[first_ind + ind] = 1
                     new_equations.append(new_row)
             # adding new equations
-            new_equations = np.array(new_equations)
-            new_right_sights = np.array([0] * len(new_equations))
+            new_equations = np.array(new_equations, dtype=np.int64)
+            new_right_sights = np.array([0] * len(new_equations), dtype=np.int64)
             right_sights = np.concatenate([
                 self.diff_right_sights, self.b, new_right_sights
             ])
@@ -227,10 +231,17 @@ class QPSolver:
                 self.diff_equations, self.A, new_equations
             ])
             # solving systems
-            cur_solution = np.linalg.solve(system, right_sights)
+            matr = Matrix(matrix=system.tolist())
+            matr.add_column(right_sights.tolist())
+            try:
+                cur_solution = gauss(len(matr), matr).matrix[0]
+            except ZeroDivisionError:
+                # matrix is singular
+                cur_solution = [-1]
             # checking if solution was reached
-            if all(cur_solution >= 0):
-                sol = list(cur_solution[:])
+            eps = -1e-9
+            if all(num >= eps for num in cur_solution):
+                sol = cur_solution[:]
                 if print_solution:
                     print('Problem solved successfully')
                     print(f'x vector: {sol}')
