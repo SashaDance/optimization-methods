@@ -1,5 +1,4 @@
 from matrix import Matrix
-import numpy as np
 
 def gauss(n: int, matrix: Matrix) -> Matrix:
     solution = Matrix(1, n)

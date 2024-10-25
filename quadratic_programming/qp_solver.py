@@ -8,6 +8,11 @@ from matrix import Matrix
 
 
 class QPSolver:
+    """
+    Implementation of quadratic programming solver
+    Time complexity: O( (n + m)^3 * 2 ^ (n + m) )
+    where n is the number of variables and m is the number of conditions
+    """
     def __init__(self, n: int,
                  m: int,
                  function: str,
@@ -25,6 +30,9 @@ class QPSolver:
             self.__print_system()
 
     def __get_diff_equations(self) -> None:
+        """
+        Returns equations that are a derivatives of the Lagrangian function
+        """
         # getting coefficients for initial n variables
         self.x_vars = sp.symbols(
             ' '.join([f'x{i + 1}' for i in range(self.n)])
@@ -46,6 +54,7 @@ class QPSolver:
                 n=self.n,
                 extr_const=True
             )
+            # converting max problem to min problem
             diff_coeffs = (
                 [-num for num in diff_coeffs] if self.mode == 'max'
                 else diff_coeffs
@@ -83,6 +92,10 @@ class QPSolver:
         )
 
     def __process_constraints(self) -> None:
+        """
+        Parses inputs and converts problem to canonical form:
+        all inequalities in constrains replaced with equalities
+        """
         self.A = []  # constraints coefficients matrix
         self.b = []  # right sights of the constraints
         num_residues = self.m
@@ -111,6 +124,9 @@ class QPSolver:
         )
 
     def __print_system(self) -> None:
+        """
+        Prints system that will be solved
+        """
         # diff equations
         all_right_sights = np.concatenate([
             self.diff_right_sights, self.b
@@ -144,6 +160,15 @@ class QPSolver:
                               equation: str,
                               n: int,
                               extr_const: bool = True) -> list[int]:
+        """
+        Returns list of coefficients
+        from string representation of linear equation
+        :param var_name: name of variable (x1 + x2 then name is x)
+        :param equation: string representation of equation
+        :param n: number of variables
+        :param extr_const: whether append constant term to answer or not
+        :return: list of coefficients
+        """
         # prepare regex to find all coefficients and the variable indices
         pattern = rf'([+-]?\d*)\*?{var_name}(\d+)'
 
@@ -185,11 +210,20 @@ class QPSolver:
 
     @staticmethod
     def calculate_func_val(func: str, x_vec: list[float]) -> float:
+        """
+        :param func: string representation of function
+        :param x_vec: point to evaluate function at
+        :return: function value in given point
+        """
         for ind, x in enumerate(x_vec):
             func = func.replace(f'x{ind + 1}', str(x))
         return eval(func)
 
     def solve(self, print_solution: bool) -> Optional[list[float]]:
+        """
+        :param print_solution: whether print solution or not
+        :return: optimal x vector for given problem
+        """
         for i in range(2 ** (self.n + self.m)):
             # selecting x and xr that are zero
             x_mask = np.array(
@@ -211,6 +245,7 @@ class QPSolver:
                 list(range(self.m)),
                 1 - x_mask[self.n:]  # inverting bytes
             )
+            # creating new equations corresponding to variables that are zero
             new_equations = []
             first_indices = (0, self.n + self.m, self.n + 2 * self.m)
             all_indices = list(map(
