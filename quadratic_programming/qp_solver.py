@@ -282,7 +282,7 @@ class QPSolver:
                     print('Problem solved successfully')
                     print(f'x vector: {sol}')
                     val = self.calculate_func_val(self.f_str, sol)
-                    val = val if self.mode == 'min' else -val
+                    val = val
                     print(f'Function value: {val}')
                 return sol
 
