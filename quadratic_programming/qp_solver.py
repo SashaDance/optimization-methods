@@ -68,7 +68,7 @@ class QPSolver:
             [
                 self.diff_equations,
                 np.zeros(
-                    shape=(len(self.diff_equations), self.m),
+                    shape=(len(self.diff_equations), self.num_resids),
                     dtype=np.int64
                 )
             ],
@@ -96,21 +96,42 @@ class QPSolver:
         Parses inputs and converts problem to canonical form:
         all inequalities in constrains replaced with equalities
         """
+        symbols = ['=', '>', '<']
+        self.num_resids = 0
         self.A = []  # constraints coefficients matrix
         self.b = []  # right sights of the constraints
-        num_residues = self.m
+        num_residues = len([
+            1 for _ in self.constraints if '>' in _ or '<' in _
+        ])
         cnt = 0
         for constraint in self.constraints:
-            row, right_sight = constraint.split('<')
+            for ch in symbols:
+                if ch in constraint:
+                    symb = ch
+                    break
+            row, right_sight = constraint.split(symb)
             row = [int(num) for num in row[:-1].split()]
             right_sight = int(right_sight[1:])
             # appending residues
-            for i in range(num_residues):
-                if i == cnt:
-                    row.append(1)
-                else:
+            self.num_resids += 1
+            if symb == '<':
+                for i in range(num_residues):
+                    if i == cnt:
+                        row.append(1)
+                    else:
+                        row.append(0)
+                cnt += 1
+            elif symb == '>':
+                for i in range(num_residues):
+                    if i == cnt:
+                        row.append(-1)
+                    else:
+                        row.append(0)
+                cnt += 1
+            else:
+                self.num_resids -= 1
+                for i in range(num_residues):
                     row.append(0)
-            cnt += 1
             self.A.append(row)
             self.b.append(right_sight)
         self.A, self.b = np.array(self.A), np.array(self.b)
@@ -122,6 +143,7 @@ class QPSolver:
             ],
             axis=1
         )
+        # TODO: fix case when constraints are equalities
 
     def __print_system(self) -> None:
         """
@@ -154,6 +176,7 @@ class QPSolver:
                 + ' + ' + mu_
                 + f' = {all_right_sights[ind]}'
             )
+            # TODO: fix print for equalities as constrainst
 
     @staticmethod
     def parse_linear_equation(var_name: str,
@@ -224,15 +247,15 @@ class QPSolver:
         :param print_solution: whether print solution or not
         :return: optimal x vector for given problem
         """
-        for i in range(2 ** (self.n + self.m)):
+        for i in range(2 ** (self.n + self.num_resids)):
             # selecting x and xr that are zero
             x_mask = np.array(
-                [int(_) for _ in bin(i)[2:].zfill(self.n + self.m)],
+                [int(_) for _ in bin(i)[2:].zfill(self.n + self.num_resids)],
                 dtype=np.int64
             )
             # getting x that are zero
             x_indices = itertools.compress(
-                list(range(self.n + self.m)),
+                list(range(self.n + self.num_resids)),
                 x_mask
             )
             # getting mu that are zero
@@ -247,14 +270,18 @@ class QPSolver:
             )
             # creating new equations corresponding to variables that are zero
             new_equations = []
-            first_indices = (0, self.n + self.m, self.n + 2 * self.m)
+            first_indices = (
+                0,
+                self.n + self.num_resids,
+                self.n + self.m + self.num_resids
+            )
             all_indices = list(map(
                 lambda x: list(x),
                 [x_indices, lambda_indices, mu_indices]
             ))
             for first_ind, indices in zip(first_indices, all_indices):
                 for ind in indices:
-                    new_row = [0] * (2 * (self.n + self.m))
+                    new_row = [0] * (2 * self.n + self.m + self.num_resids)
                     new_row[first_ind + ind] = 1
                     new_equations.append(new_row)
             # adding new equations
